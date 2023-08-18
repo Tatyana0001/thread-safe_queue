@@ -17,13 +17,13 @@ public:
     safe_queue& operator = (const safe_queue&) = delete;
     void push(std::function <void()>& func) {
         std::unique_lock<std::mutex> lock1(m);
-        s_queue.push(func);
+        s_queue.push(move(func));
         cond.notify_one();
     }
     std::function <void()> pop() {
         std::unique_lock<std::mutex> lock2(m);
-        cond.wait(lock2, [this] {return !s_queue.empty(); });
-        std::function <void()> func_elem = s_queue.front();
+        cond.wait(lock2, [this] (){return !s_queue.empty(); });
+        std::function <void()> func_elem = move(s_queue.front());
         s_queue.pop();
         return func_elem;
     }
@@ -37,24 +37,22 @@ public:
     thread_pool(const thread_pool&) = delete;
     thread_pool& operator = (const thread_pool&) = delete;
     thread_pool() {
-        const int size_thread = std::thread::hardware_concurrency() - 2;
         for (size_t i = 0; i < size_thread; i++) {
             threads.push_back(std::thread(&thread_pool::work, this));
         }
     }
-    
     void work() {
-        if (!s_queue.empty()) {
-            std::function<void()> task = sf.pop();
-            task();
-        }
+            if (!s_queue.empty()) {
+                std::function<void()> task = sf.pop();
+                task();
+            }
     }
     void submit(std::function<void()> pool) {
         sf.push(pool);
         thread_pool();
     }
     ~thread_pool() {
-        for (size_t i = 0; i < threads.size(); i++) {
+        for (size_t i = 0; i < size_thread; i++) {
             if (threads[i].joinable()) {
                 threads[i].join();
             };
@@ -63,6 +61,7 @@ public:
 private:
     std::vector<std::thread> threads;
     safe_queue sf;
+    const int size_thread = std::thread::hardware_concurrency() - 2;
 };
 
 
@@ -77,7 +76,7 @@ void func2() {
 int main()
 {
     thread_pool t_pool;
-    for (size_t i = 0; i < 15; i++) {
+    for (size_t i = 0; i < 10; i++) {
         t_pool.submit(func1);
         t_pool.submit(func2);
         std::this_thread::sleep_for(1s);
